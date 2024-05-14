@@ -1,31 +1,35 @@
-from flask import Flask, request, jsonify, session
-from flask_restful import Api, Resource
-from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+import random
+import string
+from flask_restful import Api, Resource, reqparse
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 from flask_sqlalchemy import SQLAlchemy
+from itsdangerous import URLSafeTimedSerializer
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
+from flask import Flask, request, session
+import os
+
 
 app = Flask(__name__)
-jwt = JWTManager(app)
 
+
+# setting code for mail
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///Users.db'  
-app.secret_key = 'y7gtt7uftiu'
-
-mail = Mail(app)
-
-api = Api(app)
-db = SQLAlchemy(app)
-
-
-app.config['MAIL_SERVER'] = 'smtp.example.com'
+app.config['SECRET_KEY'] = 'y7gtt7uasdadasdasdqwebhnftiu'
+app.config['MAIL_SERVER'] = 'smtp.gmail.com' 
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = 'adiyudiz718@gmail.com'
-app.config['MAIL_PASSWORD'] = '6353yudiz592494hellO'
+app.config['MAIL_PASSWORD'] = 'qebw bjoo yrgg xjpv'
+app.config['MAIL_DEFAULT_SENDER'] = 'adiyudiz718@gmail.com'
 
 
+db = SQLAlchemy(app)
+mail = Mail(app)
+jwt = JWTManager(app)
+api = Api(app)
 
-
+# this is db tabe which will store the data
 
 class Users(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -33,24 +37,29 @@ class Users(db.Model):
     password = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     
-# with app.app_context():
-#     db.create_all()
+with app.app_context():
+    db.create_all()
+    
+
+# =============================-Register-====================================
 
 class Register(Resource):
     def post(self):
-        
         data = request.get_json()
         username = data.get('username')
         password = data.get('password')
         email = data.get('email')
+        
         user = Users.query.filter_by(username=username).first()
         if user:
             return {'message': 'User already exists'}, 400
 
-        user = Users(email=email,username=username, password=password)
+        user = Users(email=email, username=username, password=password)
         db.session.add(user)
         db.session.commit()
         return {'message': 'User created successfully'}, 201
+
+#===============================-Login-=================================
 
 class Login(Resource):
     def post(self):
@@ -66,9 +75,9 @@ class Login(Resource):
         access_token = create_access_token(identity=username)
         return {'access_token': access_token}, 200
 
-
+# ===============================-Logout-==================================
 blacklist = set()
-
+@app.route('/logout')
 class Logout(Resource):
     @jwt_required
     def post(self):
@@ -76,7 +85,7 @@ class Logout(Resource):
         blacklist.add()
         return {'message': 'Successfully logged out'}, 200
     
-
+# 
 def check_if_token_in_blacklist(decrypted_token):
     jti = decrypted_token['jti']
     return jti in blacklist
@@ -84,42 +93,40 @@ def check_if_token_in_blacklist(decrypted_token):
 def generate_password_reset_token(user):
     return generate_password_hash(user.username)
 
+# ============================-ForgotPassword-=====================================
+parser = reqparse.RequestParser()
+parser.add_argument('email', type=str, required=True, help='Email is required')
+parser.add_argument('password', type=str)
+
 class ForgotPassword(Resource):
-    def post(self):
-        data = request.get_json()
-        username = data.get('username')
+    # @staticmethod
+    def post(self):        
+        args = parser.parse_args()
+        email = args['email']
 
-        user = Users.query.filter_by(username=username).first()
+        user = Users.query.filter_by(email=email).first()
+        if user:
+            # Generate a random password
+            new_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            user.password = generate_password_hash(new_password)  # Update user's password
+            db.session.commit()
 
-        if not user:
-            return {'message': 'User does not exist'}, 404
+            # Send email with the new password
+            msg = Message('Password Reset', recipients=[email])
+            msg.body = f'Your new password is: {new_password}'
+            mail.send(msg)
 
-        # Generate a token for password reset (You can use any method you prefer)
-        reset_token = generate_password_reset_token(user)
+            return {'message': 'Password reset instructions sent to your email'}, 200
+        else:
+            return {'message': 'Email not found'}, 404
 
-        # Send the password reset link via email
-        send_password_reset_email(user.email, reset_token)
 
-        return {'message': 'Password reset instructions sent to email'}, 200
-    
-def send_password_reset_email(email, reset_token):
-
-    msg = Message('Password Reset Request', recipients=[email])
-
-    # Replace `example.com` with your actual domain name
-
-    reset_link = f'http://adiyudiz718@gmail.com/reset-password?token={reset_token}'
-    msg.body = f'Click the following link to reset your password: {reset_link}'
- 
-    # Send the email
-    Mail.send(msg)
-
+# api.add_resource(index,"/")
 api.add_resource(Register, '/register')
 api.add_resource(Login, '/login')
 api.add_resource(Logout, '/logout')
 api.add_resource(ForgotPassword, '/forgot-password')
 
-app.run(debug=True)
-
 if __name__ == '__main__':
     app.run(debug=True)
+# This command will not create the unnassery code: . env: PYTHONDONTWRITEBYTECODE =1
